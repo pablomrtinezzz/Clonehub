@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>NeonClone UI</title>
+    <!-- Tailwind CSS for rapid dark/cyberpunk UI design -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom scrollbar and aesthetics */
+        body {
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #10b981;
+        }
+
+        .cyber-border {
+            border: 1px solid #10b981;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
+        }
+    </style>
+</head>
+
+<body class="bg-slate-900 text-green-400 h-screen p-6 flex flex-col">
+
+    <!-- Header -->
+    <header class="flex justify-between items-center border-b border-green-500 pb-4 mb-6">
+        <div>
+            <h1 class="text-2xl font-bold tracking-widest text-green-300">NEON_CLONE // V1.0</h1>
+            <p class="text-xs text-green-600 mt-1">HIGH-SPEED ASYNC REPOSITORY MANAGER</p>
+        </div>
+        <button id="authBtn" onclick="authenticate()"
+            class="cyber-border px-4 py-2 hover:bg-green-900 hover:text-white transition-colors">
+            [ INITIALIZE OAUTH ]
+        </button>
+    </header>
+
+    <!-- Global Path Input -->
+    <div class="mb-4 flex gap-4 hidden" id="pathContainer">
+        <input type="text" id="basePath"
+            placeholder="Enter base directory path (e.g., C:/Projects/ or /home/user/code/)"
+            class="w-full bg-slate-800 border border-green-700 p-2 text-green-300 focus:outline-none focus:border-green-400">
+        <button onclick="cloneSelected()"
+            class="bg-green-600 text-slate-900 px-6 font-bold hover:bg-green-500 transition-colors">
+            EXECUTE_CLONE
+        </button>
+    </div>
+
+    <!-- System Logs / Status -->
+    <div id="statusLog" class="text-xs mb-4 text-yellow-500">SYSTEM READY. WAITING FOR AUTHENTICATION...</div>
+
+    <!-- Repository List -->
+    <div class="flex-1 overflow-y-auto cyber-border p-4 bg-slate-800/50 hidden" id="repoListContainer">
+        <table class="w-full text-left border-collapse">
+            <thead>
+                <tr class="border-b border-green-700">
+                    <th class="p-2 w-10">SEL</th>
+                    <th class="p-2">REPOSITORY NAME</th>
+                </tr>
+            </thead>
+            <tbody id="repoTableBody">
+                <!-- Populated dynamically via JS -->
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        let repositories = [];
+
+        async function authenticate() {
+            document.getElementById('statusLog').innerText = "WAITING FOR BROWSER AUTHORIZATION...";
+            // pywebview.api exposes the Python class methods to JS
+            const success = await pywebview.api.authenticate();
+
+            if (success) {
+                document.getElementById('authBtn').innerText = "[ AUTH_OK ]";
+                document.getElementById('authBtn').classList.add('text-green-500', 'border-green-500');
+                document.getElementById('statusLog').innerText = "AUTHENTICATION SUCCESSFUL. FETCHING REPOSITORIES...";
+                fetchRepos();
+            } else {
+                document.getElementById('statusLog').innerText = "ERR: AUTHENTICATION FAILED.";
+            }
+        }
+
+        async function fetchRepos() {
+            const result = await pywebview.api.fetch_repositories();
+            if (result.error) {
+                document.getElementById('statusLog').innerText = `ERR: ${result.error}`;
+                return;
+            }
+
+            repositories = result;
+            renderRepos();
+            document.getElementById('repoListContainer').classList.remove('hidden');
+            document.getElementById('pathContainer').classList.remove('hidden');
+            document.getElementById('statusLog').innerText = `[ ${repositories.length} REPOSITORIES LOADED ]`;
+        }
+
+        function renderRepos() {
+            const tbody = document.getElementById('repoTableBody');
+            tbody.innerHTML = '';
+
+            repositories.forEach((repo, index) => {
+                const tr = document.createElement('tr');
+                tr.className = "border-b border-green-800 hover:bg-slate-800 transition-colors";
+                tr.innerHTML = `
+                    <td class="p-2">
+                        <input type="checkbox" id="repo_${index}" class="accent-green-500 w-4 h-4 cursor-pointer">
+                    </td>
+                    <td class="p-2">
+                        <label for="repo_${index}" class="cursor-pointer block w-full h-full">${repo.name}</label>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function cloneSelected() {
+            const basePath = document.getElementById('basePath').value.trim();
+            if (!basePath) {
+                document.getElementById('statusLog').innerText = "ERR: TARGET DIRECTORY PATH REQUIRED.";
+                return;
+            }
+
+            const mappings = [];
+            repositories.forEach((repo, index) => {
+                const checkbox = document.getElementById(`repo_${index}`);
+                if (checkbox.checked) {
+                    // Combine base path and repo name. Ensure correct slash.
+                    const sep = basePath.includes('\\') ? '\\' : '/';
+                    const targetPath = basePath.endsWith(sep) ? basePath + repo.name : basePath + sep + repo.name;
+                    mappings.push({ url: repo.url, path: targetPath });
+                }
+            });
+
+            if (mappings.length === 0) {
+                document.getElementById('statusLog').innerText = "ERR: NO REPOSITORIES SELECTED.";
+                return;
+            }
+
+            document.getElementById('statusLog').innerText = `[ EXECUTING ASYNC CLONE OPERATION FOR ${mappings.length} TARGETS... ]`;
+            const result = await pywebview.api.clone_selected(mappings);
+            document.getElementById('statusLog').innerText = result;
+        }
+    </script>
+</body>
+
+</html>
